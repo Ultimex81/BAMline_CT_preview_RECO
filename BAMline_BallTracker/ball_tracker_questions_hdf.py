@@ -7,7 +7,7 @@ from PyQt5.uic import loadUiType
 
 print('We are in Ball_Tracker_Question_hdf.py now.')
 
-Ui_Ball_Tracker_Question_Window, Q_Ball_Tracker_Question_Window = loadUiType('Ball_Tracker_Question_hdf.ui')  # GUI vom Hauptfenster
+Ui_Ball_Tracker_Question_Window, Q_Ball_Tracker_Question_Window = loadUiType('Ball_Tracker_Question_hdf_testmus.ui')  # GUI vom Hauptfenster
 
 class Ball_Tracker_Question(Ui_Ball_Tracker_Question_Window, Q_Ball_Tracker_Question_Window):
 

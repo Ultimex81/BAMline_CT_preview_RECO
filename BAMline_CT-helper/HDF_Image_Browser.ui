@@ -123,6 +123,23 @@
           <item row="2" column="1">
            <widget class="QLineEdit" name="Qchannel_name"/>
           </item>
+          <item row="1" column="2">
+           <widget class="QCheckBox" name="normalize_checkBox">
+            <property name="text">
+             <string>Normalize</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="4">
+           <widget class="QSpinBox" name="FF_number_spinBox"/>
+          </item>
+          <item row="1" column="3">
+           <widget class="QLabel" name="label_FF">
+            <property name="text">
+             <string>First N FFs</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </item>
        </layout>

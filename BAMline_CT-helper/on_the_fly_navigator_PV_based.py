@@ -91,15 +91,15 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
         #self.pvname = "PEGAS:miocb0101004.RBV"
         #img_pv = epics.PV(pvname, auto_monitor=True)
 
-        self.omega_pv = epics.PV("PEGAS:miocb0102002.RBV")
-        self.piezo45_pv = epics.PV("micronix:m2.RBV")
-        self.piezo135_pv = epics.PV("micronix:m1.RBV")
+        self.omega_pv = epics.PV("PEGAS:miocb0102000.RBV")
+        self.piezo45_pv = epics.PV("MCS2Hex:CTm2.RBV")
+        self.piezo135_pv = epics.PV("MCS2Hex:CTm1.RBV")
         self.energy_pv = epics.PV("Energ:25000007rbv")
         self.distance_pv = epics.PV("faulhaber:m1.RBV")
         self.lens_pv = epics.PV("OMS58:25009007_MnuAct.SVAL")
         self.exp_time_pv = epics.PV("PCOEdge:cam1:AcquireTime_RBV")
         self.aqp_time_pv = epics.PV("PCOEdge:cam1:AcquirePeriod")
-        self.W_velocity_pv = epics.PV("PEGAS:miocb0102002.VELO")
+        self.W_velocity_pv = epics.PV("PEGAS:miocb0102000.VELO")
 
         #self.sizeX_pv = epics.PV("PCOEdge:cam1:SizeX_RBV")
         #self.sizeY_pv = epics.PV("PCOEdge:cam1:SizeY_RBV")
@@ -140,6 +140,7 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
             {'size': int(self.ringbuffer_size[0]/2), 'fullSize': int(self.ringbuffer_size[0]/2), 'binning': 1}]
 
         self.ringbuffer = numpy.ones(self.ringbuffer_size, dtype='H')
+        self.current_omega_pv = self.omega_pv.get()
         self.ringbuffer_Micos_W = numpy.zeros(self.ringbuffer_size[0], dtype=numpy.float32)
 
         self.ringbuffer_exists = 1
@@ -148,7 +149,7 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
         self.sino_chopped = numpy.zeros((int(self.ringbuffer_size[0]/2),1, self.ringbuffer_size[2]), dtype='H')
 
         self.ruler_grid_line_thickness = 2
-        self.rotation_offset = 45   #still under question
+        self.rotation_offset = 45 #still under question
         self.label_x = 'Piezo 45 [um]'
         self.label_y = 'Piezo 135 [um]'
 
@@ -204,10 +205,12 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
         #self.ringbuffer[self.i % self.ringbuffer_size[0],:,:] = rawimg2d[self.slice_number.value(), : ]
         self.ringbuffer[self.i % self.ringbuffer_size[0],:,:] = rawimgflat[-(round(self.sizeY / 2)) * self.sizeX: -(round(self.sizeY / 2) -1) * self.sizeX]
 
-        self.ringbuffer_Micos_W[self.i % self.ringbuffer_size[0]] = float(self.omega_pv.get())
-        print('Micos_W Ringbuffer', float(self.omega_pv.get()))
+        self.current_omega_pv = self.omega_pv.get()
+        self.ringbuffer_Micos_W[self.i % self.ringbuffer_size[0]] = self.current_omega_pv
+
+        print('Micos_W Ringbuffer', self.current_omega_pv)
         #, self.ringbuffer_Micos_W)
-        self.progressBar.setValue(self.omega_pv.get())
+        #self.progressBar.setValue(self.omega_pv.get() % 360)
         if (self.i % 5) == 0:
             print('FEEDING IMAGE')
             sinogram = self.ringbuffer[:,0,:]
@@ -235,18 +238,22 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
             print(int(self.ringbuffer_size[0]/2))
             self.extended_sinos = tomopy.minus_log(self.sino_chopped)
             options = {'proj_type': 'cuda', 'method': 'FBP_CUDA'}
-
-            self.slice = tomopy.recon(self.extended_sinos, numpy.linspace(0,math.pi,int(self.ringbuffer_size[0]/2),endpoint=False)+((self.i % self.ringbuffer_size[0])/self.ringbuffer_size[0])*2*math.pi,
+            #+self.current_omega_pv/180*math.pi
+            #
+            self.slice = tomopy.recon(self.extended_sinos, numpy.linspace(0,math.pi,int(self.ringbuffer_size[0]/2),endpoint=False)+(((self.i % self.ringbuffer_size[0])/self.ringbuffer_size[0])% 45)*2*math.pi,
                                       center=float(self.COR),
                                       algorithm=tomopy.astra,
                                   options=options)
+            print(self.slice.shape)
+            self.slice = self.slice[0,:,:]
+            print(self.slice.shape)
 
             if self.enable_grid.isChecked() == True:
-                self.add_ruler()
+                self.slice = self.add_ruler()
 
             self.reco_rec['dimension'] = [
-                {'size': self.slice.shape[1], 'fullSize': self.slice.shape[1], 'binning': 1},
-                {'size': self.slice.shape[2], 'fullSize': self.slice.shape[2], 'binning': 1}]
+                {'size': self.slice.shape[0], 'fullSize': self.slice.shape[0], 'binning': 1},
+                {'size': self.slice.shape[1], 'fullSize': self.slice.shape[1], 'binning': 1}]
             self.reco_rec['value'] = ({'floatValue': self.slice.flatten()},)
 
         print('i', self.i, 'Modulus:', self.i % self.ringbuffer_size[0])
@@ -268,7 +275,7 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
         self.f = h5py.File(self.path_klick, 'r', libver='latest', swmr=True)
         self.vol_proxy = self.f['/entry/data/data']
         #self.line_proxy = self.f['/entry/instrument/NDAttributes/CT_MICOS_W']
-        self.line_proxy = self.f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W2']
+        self.line_proxy = self.f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W1']
 
         print('raw data volume size: ', self.vol_proxy.shape)
 
@@ -414,7 +421,7 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
             self.buttons_deactivate_all()
 
         print('pixel size: ', self.pixel_size_set)
-        self.pixel_size.setValue(self.pixel_size_set)
+        self.pixel_size.setValue(self.pixel_size_set*self.binningx)
 
 
     def prefill_binning(self):
@@ -475,16 +482,21 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
 
     def add_ruler(self):
 
-        if self.piezo45_pv.get(as_string=True) == 'None':
+
+        self.piezo45_val = self.piezo45_pv.get()
+
+        self.piezo135_val = self.piezo135_pv.get()
+
+        if str(self.piezo45_val) == 'None':
             self.piezo_45_proxy = 0
         else:
-            self.piezo_45_proxy = self.piezo45_pv.get()
+            self.piezo_45_proxy = self.piezo45_val
         print('piezo 45', self.piezo_45_proxy)
 
-        if self.piezo135_pv.get(as_string=True) == 'None':
+        if str(self.piezo135_val) == 'None':
             self.piezo_135_proxy = 0
         else:
-            self.piezo_135_proxy = self.piezo135_pv.get()
+            self.piezo_135_proxy = self.piezo135_val
         print('piezo 135', self.piezo_135_proxy)
 
         self.ruler_grid_color = math.ceil(numpy.max(self.slice))
@@ -493,10 +505,11 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
         cv2.circle(self.slice, (round(self.slice.shape[1] / 2), round(self.slice.shape[1] / 2)), round(self.slice.shape[1]/2), self.ruler_grid_color, self.ruler_grid_line_thickness)
 
         if self.grid_micrometer.isChecked() == True:
+            print('ADDING RULER MICROMETER')
 
             # add label x
             cv2.putText(self.slice, self.label_x, (
-            round(self.slice.shape[1] * self.pixel_size.value() / 2) + 20, round(self.ruler_grid_line_thickness) * 40),
+            round(self.slice.shape[1] / 2) + 20, round(self.ruler_grid_line_thickness) * 40),
                         cv2.FONT_HERSHEY_SIMPLEX, (self.ruler_grid_line_thickness / 2), self.ruler_grid_color,
                         thickness=self.ruler_grid_line_thickness)
 
@@ -522,7 +535,7 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
 
 
             # add label Y
-            cv2.putText(self.slice, self.label_y, (20, round(self.slice.shape[1] * self.pixel_size.value() / 2) -40),
+            cv2.putText(self.slice, self.label_y, (20, round(self.slice.shape[1] / 2) -40),
                         cv2.FONT_HERSHEY_SIMPLEX, (self.ruler_grid_line_thickness / 2), self.ruler_grid_color,
                         thickness=self.ruler_grid_line_thickness)
 
@@ -549,41 +562,49 @@ class OnTheFlyNavigator(Ui_on_the_fly_Navigator_Window, Q_on_the_fly_Navigator_W
 
 
         if self.grid_pixel.isChecked() == True:
+            print('ADDING PXL RULER')
 
-            # add label x
+            #add label x
             cv2.putText(self.slice, 'Pixel', (
-                round(self.slice.shape[1] * self.pixel_size.value() / 2) + 20,
+                round(self.slice.shape[1] / 2) + 20,
                 round(self.ruler_grid_line_thickness) * 40),
                         cv2.FONT_HERSHEY_SIMPLEX, (self.ruler_grid_line_thickness / 2), self.ruler_grid_color,
                         thickness=self.ruler_grid_line_thickness)
 
-            # add ruler +X
+            #add ruler +X
+
             for r in range(round(self.slice.shape[1] / 2), self.slice.shape[1], round(self.spinBox_pixel_grid.value())):
-                cv2.line(self.slice, (r, 0),   (r, self.slice.shape[1]), (65535, 65535, 65535), self.ruler_grid_line_thickness)
-                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (r + 20, round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, (65535, 65535, 65535), thickness=self.ruler_grid_line_thickness)
+                print('drawing a line from ', r, 0, 'to ', r, self.slice.shape[1])
+                cv2.line(self.slice, (r,0),   (r,self.slice.shape[1]), self.ruler_grid_color, thickness=self.ruler_grid_line_thickness)
+
+                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (r + 20, round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, self.ruler_grid_color, thickness=self.ruler_grid_line_thickness)
 
             # add ruler -X
             for r in range(round(self.slice.shape[1] / 2), 0, -round(self.spinBox_pixel_grid.value())):
                 #print(r)
-                cv2.line(self.slice, (r, 0),   (r, self.slice.shape[1]), (65535, 65535, 65535), self.ruler_grid_line_thickness)
-                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (r + 20, round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, (65535, 65535, 65535), thickness=self.ruler_grid_line_thickness)
+                cv2.line(self.slice, (r, 0),   (r, self.slice.shape[1]), self.ruler_grid_color, self.ruler_grid_line_thickness)
+                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (r + 20, round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, self.ruler_grid_color, thickness=self.ruler_grid_line_thickness)
 
 
             # add label Y
             cv2.putText(self.slice, 'Pixel',
-                        (20, round(self.slice.shape[1] * self.pixel_size.value() / 2) - 40),
+                        (20, round(self.slice.shape[1] / 2) - 40),
                         cv2.FONT_HERSHEY_SIMPLEX, (self.ruler_grid_line_thickness / 2), self.ruler_grid_color,
                         thickness=self.ruler_grid_line_thickness)
 
             # add ruler +Y
             for r in range(round(self.slice.shape[1] / 2), self.slice.shape[1], round(self.spinBox_pixel_grid.value())):
-                cv2.line(self.slice, (0, r), (self.slice.shape[1], r), (65535, 65535, 65535), self.ruler_grid_line_thickness)
-                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (20,r + round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, (65535, 65535, 65535), thickness=self.ruler_grid_line_thickness)
+                cv2.line(self.slice, (0, r), (self.slice.shape[1], r), self.ruler_grid_color, self.ruler_grid_line_thickness)
+                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (20,r + round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, self.ruler_grid_color, thickness=self.ruler_grid_line_thickness)
 
             # add ruler -Y
             for r in range(round(self.slice.shape[1] / 2), 0, -round(self.spinBox_pixel_grid.value())):
-                cv2.line(self.slice, (0, r), (self.slice.shape[1], r), (65535, 65535, 65535), self.ruler_grid_line_thickness)
-                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (20,r + round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, (65535, 65535, 65535), thickness=self.ruler_grid_line_thickness)
+                cv2.line(self.slice, (0, r), (self.slice.shape[1], r), self.ruler_grid_color, self.ruler_grid_line_thickness)
+                cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (20,r + round(self.ruler_grid_line_thickness/2)*20), cv2.FONT_HERSHEY_SIMPLEX, self.ruler_grid_line_thickness/2, self.ruler_grid_color, thickness=self.ruler_grid_line_thickness)
+            print('DONE ADDING RULER')
+        return self.slice
+
+
 
 
     def reconstruct(self):
