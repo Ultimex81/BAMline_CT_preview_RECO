@@ -21,7 +21,7 @@ import pvaccess as pva                          #to install package with pycharm
 version = "Version 2024.12.17 a"
 
 #Install ImageJ-PlugIn: EPICS AreaDetector NTNDA-Viewer, look for the channel specified here under channel_name, consider multiple users on servers!!!
-channel_name = 'BAMline:CTReco_H'
+channel_name = 'BAMline:CTReco_I'
 #standard_path = "C:/temp/HDF5-Reading/220130_1734_604_J1_anode_half_cell_in-situ_Z30_Y5430_15000eV_1p44um_500ms/" # '/mnt/raid/CT/2022/'
 
 standard_path = r'C:/delete/reg_data/18_230606_2044_AlTi_F_Ref_tomo___Z25_Y6500_25000eV_10x_400ms'
@@ -45,6 +45,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_ringradius.valueChanged.connect(self.check)
         self.COR.valueChanged.connect(self.check)
         self.COR_roll.valueChanged.connect(self.check)
+        self.COR_roll.valueChanged.connect(self.rotation_correction)
         self.Offset_Angle.valueChanged.connect(self.check)
         self.speed_W.valueChanged.connect(self.check)
         self.algorithm_list.currentIndexChanged.connect(self.check)
@@ -111,6 +112,12 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
          if self.auto_update.isChecked():
              self.check_test_button()
          return
+
+    def rotation_correction(self):      # display the CAM-ROT correction
+        CAM_rot = (numpy.arctan(self.COR_roll.value()))*180/math.pi
+        s = "{:.3f}".format(CAM_rot)
+        self.label_26.setText('CAM-rot rel: '+ s + '°')
+
 
     def update_window_size(self):
         self.new = 1
@@ -277,6 +284,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
         #get rotation angles
         #self.line_proxy = f['/entry/instrument/NDAttributes/CT_MICOS_W']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/AEROTECH_W']
         #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W1']
         #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W2']
         #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_HUBER_W']
@@ -490,17 +498,24 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
             center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] * (self.number_of_used_projections)
             #center_list = [self.COR.value() +  self.full_size] * (self.number_of_used_projections)
         else:
-            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
+            #center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
+            center_list = self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)
+
+        print('center list is ', center_list)
 
         # create one sinogram in the form [z, y, x]
         transposed_sinos = numpy.zeros((min(self.number_of_used_projections, self.Norm.shape[0]), 1, self.full_size), dtype=float)
         transposed_sinos[:,0,:] = self.Norm[self.last_zero_proj : min(self.last_zero_proj + self.number_of_used_projections, self.Norm.shape[0]),:]
+
+        print('transposed sinos is ', transposed_sinos.shape)
 
 
 
         #extend data with calculated parameter, compute logarithm, remove NaN-values
         ### cut and reorder 360°-sinos to 180°-sinos, work in progress !!!
         extended_sinos = tomopy.misc.morph.pad(transposed_sinos, axis=2, npad=round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size), mode='edge')
+
+        print('extended sinos is', extended_sinos.shape)
 
         # for 360° scans crop the padded area opposite of the axis
         print('cropping empty area')
@@ -523,7 +538,13 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         #apply phase retrieval if desired
         if self.checkBox_phase_2.isChecked() == True:
             print('applying phase contrast')
-            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+            print('TEST')
+            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value() / 1e4,
+                                                              dist=self.doubleSpinBox_distance_2.value(),
+                                                              energy=self.doubleSpinBox_Energy_2.value(),
+                                                              alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
+                                                              ncore=None, nchunk=None)
+            #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
         print('ring_filter sino_shape', extended_sinos[:,0,:].shape)
 
@@ -810,7 +831,14 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
             #apply phase retrieval if desired
             if self.checkBox_phase_2.isChecked() == True:
-                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+                print('TEST')
+                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value()/1e4,
+                                                                  dist=self.doubleSpinBox_distance_2.value(),
+                                                                  energy=self.doubleSpinBox_Energy_2.value(),
+                                                                  alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
+                                                                  ncore=None, nchunk=None)
+
+                #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
             # create list with COR-positions
             center_list = [self.COR.value() + self.COR_roll.value() * (i + self.spinBox_first.value()) * self.block_size + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (
