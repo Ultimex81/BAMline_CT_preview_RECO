@@ -24,6 +24,7 @@ Ui_CT_previewWindow, QCOR_previewWindow = loadUiType('CT-preview_phase.ui')  # G
 class CT_preview(Ui_CT_previewWindow, QCOR_previewWindow):
 
     def __init__(self, COR, rotate, pixel_size, path_klick, path_out, block_size, dark_field_value, no_of_cores, checkBox_save_normalized, checkBox_classic_order, transpose, find_pixel_size_vertical):#, algorithm, filter):
+        # add comment
         super(CT_preview, self).__init__()
         self.setupUi(self)
 
