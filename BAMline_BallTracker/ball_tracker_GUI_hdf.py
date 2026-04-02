@@ -20,7 +20,7 @@ from PIL import Image
 def main():
 	# Basics:
 	# ---------------------------------------------------
-	path_klick = tkinter.filedialog.askopenfilename(title="Select one file of the scan", initialdir = "/mnt/raid/CT/2021/2021_12/Markoetter/W500um/211207_1441_36_W500um___Z225_Y8400_20000eV_3p61um_100ms/")
+	path_klick = tkinter.filedialog.askopenfilename(title="Select one file of the scan", initialdir = "/mnt/raid/CT/")
 	#path_klick = QtWidgets.QFileDialog.getOpenFileName(None, 'Select one file of the scan, please.',"/mnt/raid/CT/2021/2021_12/Markoetter/W500um/211207_1441_36_W500um___Z225_Y8400_20000eV_3p61um_100ms/")
 
 	name = "Kugeljustage_"
@@ -38,14 +38,17 @@ def main():
 	# checking start of rotation
 	with h5py.File(path_klick, 'r') as hdf:
 		entry = hdf.get('entry')
-		w_data = entry.get('/entry/instrument/NDAttributes/CT_MICOS_W')
+		w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_W')
+		#w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W1')
+		#w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W2')
+		#w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_HUBER_W')
 		w_array = numpy.array(w_data)
 		print(w_array)
 		i = main_Ball_Tracker_Question.HDF_FF1
 		while i < len(w_array):
 			print(i)
 			if round(w_array[i]) != 0:  										# notice the last projection at zero degree
-				last_zero_proj = i + 3 - main_Ball_Tracker_Question.HDF_FF1 	# start analysis 3 images after start of rotation
+				last_zero_proj = i + 1 - main_Ball_Tracker_Question.HDF_FF1 	# start analysis 3 images after start of rotation
 				break
 			i = i + 1
 
@@ -58,7 +61,7 @@ def main():
 		numberFFs = main_Ball_Tracker_Question.numberFFs
 
 		Threshold = main_Ball_Tracker_Question.Threshold
-		Binning = main_Ball_Tracker_Question.Binning     # or 2, whatever
+		Binning = main_Ball_Tracker_Question.Binning     # 1 or 2, whatever
 		skip = main_Ball_Tracker_Question.skip
 		print('Binning: ', Binning)
 
@@ -180,6 +183,7 @@ def main():
 	seq.cropBorder(top=main_Ball_Tracker_Question.CropTop, bottom=main_Ball_Tracker_Question.CropBottom, left=main_Ball_Tracker_Question.CropLeft, right=main_Ball_Tracker_Question.CropRight)
 	#seq.crop(x0=100, y0=1000, x1=5000, y1=2000)    # Crop overrides border crop, if defined.
 
+	#seq.autoCrop(doAutoCrop=True, autoCropSize=400, autoCropBinningFactor=40)
 	seq.autoCrop(doAutoCrop=True, autoCropSize=600, autoCropBinningFactor=40)
 
 	# Cropping the ball afterwards, mostly to produce an animation:

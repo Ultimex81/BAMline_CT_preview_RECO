@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-version =  "Version 2022.04.20 a"
+version =  "Version 2023.01.10 a"
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 #from pyqtgraph import PlotWidget
@@ -22,6 +22,7 @@ pg.setConfigOptions(antialias=True)     # Enable antialiasing for prettier plots
 Ui_GeneratorWindow, QGeneratorWindow = loadUiType('CT_helper.ui')  # GUI vom Hauptfenster
 
 #print("Let's go")
+
 
 
 class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
@@ -73,18 +74,20 @@ class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
         self.on_the_fly_comboBox.currentIndexChanged.connect(self.calculate_speed)
         self.On_the_fly_nr_projections.valueChanged.connect(self.calculate_speed)
         self.on_the_fly_exp_time.valueChanged.connect(self.calculate_speed)
+        self.height_travel.valueChanged.connect(self.calculate_speed)
 
         #print('init')
         self.generate_list()
         self.generate_list_classic()
         self.generate_list_refraction()
-
+        self.calculate_speed()
 
         # Calculate speeds for on-the-fly CT
     def calculate_speed(self):
         self.rot_speed.setValue(int((self.on_the_fly_comboBox.currentText()))/(self.on_the_fly_exp_time.value()*self.On_the_fly_nr_projections.value()))
         self.rot_step.setValue(int((self.on_the_fly_comboBox.currentText()))/(self.On_the_fly_nr_projections.value()))
         self.duration.setValue((self.on_the_fly_exp_time.value()*self.On_the_fly_nr_projections.value())/60)
+        self.height_speed.setValue((self.height_travel.value())/(self.on_the_fly_exp_time.value()*self.On_the_fly_nr_projections.value()))
 
 
     def generate_list(self):
@@ -443,19 +446,19 @@ class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
 
 
     def get_Tomo_pos(self):
-        self.tomo_pos.setValue(caget('PEGAS:miocb0101005.RBV'))
+        self.tomo_pos.setValue(caget('PEGAS:miocb0102001.RBV'))
 
     def get_Tomo_pos_2(self):
-        self.tomo_pos_2.setValue(caget('PEGAS:miocb0101005.RBV'))
+        self.tomo_pos_2.setValue(caget('PEGAS:miocb0102001.RBV'))
 
     def get_Tomo_pos_3(self):
         self.tomo_pos_3.setValue(caget('PEGAS:miocb0102001.RBV'))
 
     def get_FF_pos(self):
-        self.FF_pos.setValue(caget('PEGAS:miocb0101005.RBV'))
+        self.FF_pos.setValue(caget('PEGAS:miocb0102001.RBV'))
 
     def get_FF_pos_2(self):
-        self.FF_pos_2.setValue(caget('PEGAS:miocb0101005.RBV'))
+        self.FF_pos_2.setValue(caget('PEGAS:miocb0102001.RBV'))
 
     def get_FF_pos_3(self):
         self.FF_pos_3.setValue(caget('PEGAS:miocb0102001.RBV'))
@@ -514,7 +517,7 @@ class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
 
         with open(file_name_csv_list, mode='w', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar=' ')  # , quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['CT_MICOS_W', 'CT_MICOS_X'])
+            csv_writer.writerow(['SAMPLE_MICOS_W2', 'SAMPLE_MICOS_X'])
             n = 0
             while (n < len(plot_list_pos)):
                 csv_writer.writerow(["{:.4f}".format(plot_list[n]),
@@ -556,7 +559,7 @@ class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
 
         with open(file_name_csv_list_2, mode='w', newline='') as csv_file_2:
             csv_writer_2 = csv.writer(csv_file_2, delimiter=';', quotechar=' ')  # , quoting=csv.QUOTE_MINIMAL)
-            csv_writer_2.writerow(['CT_MICOS_W', 'CT_MICOS_X'])
+            csv_writer_2.writerow(['SAMPLE_MICOS_W2', 'SAMPLE_MICOS_X'])
             n = 0
             while (n < len(plot_list_pos_2)):
                 csv_writer_2.writerow(["{:.4f}".format(plot_list_2[n]),
@@ -602,7 +605,7 @@ class CT_helper(Ui_GeneratorWindow, QGeneratorWindow):
 
             with open(file_name_csv_list_3 + str(x).zfill(2) + '.csv', mode='w', newline='') as csv_file_3:
                 csv_writer_3 = csv.writer(csv_file_3, delimiter=';', quotechar=' ')  # , quoting=csv.QUOTE_MINIMAL)
-                csv_writer_3.writerow(['6G_SAMPLE_ROLL', 'TOPO_MICOS_X'])
+                csv_writer_3.writerow(['6G_SAMPLE_ROLL', 'SAMPLE_MICOS_X'])
 
                 i = 0
 
