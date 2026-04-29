@@ -495,7 +495,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
         # create list with x-positions of projections
         if self.comboBox_180_360.currentText() == '360 - axis right':
-            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] * (self.number_of_used_projections)
+            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] # * (self.number_of_used_projections)
             #center_list = [self.COR.value() +  self.full_size] * (self.number_of_used_projections)
         else:
             #center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
