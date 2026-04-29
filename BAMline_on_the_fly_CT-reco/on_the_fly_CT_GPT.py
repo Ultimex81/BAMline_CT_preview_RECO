@@ -1,5 +1,3 @@
-import multiprocessing
-multiprocessing.freeze_support()
 import numpy
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.uic import loadUiType
@@ -13,27 +11,27 @@ import csv
 import cv2                                      #to install package with pycharm by finding "opencv-python"
 from scipy.ndimage.filters import gaussian_filter, median_filter
 import pvaccess as pva                          #to install package with pycharm search for "pvapy"
-#import algotom.prep.removal as rem
-#import algotom.prep.calculation as calc
+import algotom.prep.removal as rem
+import algotom.prep.calculation as calc
 
 
 # On-the-fly-CT Reco
-version = "Version 2024.12.17 a"
+version = "Version 2025.07.04 a"
 
 #Install ImageJ-PlugIn: EPICS AreaDetector NTNDA-Viewer, look for the channel specified here under channel_name, consider multiple users on servers!!!
-channel_name = 'BAMline:CTReco_TestMUS'
+channel_name = 'BAMline:CTReco'
 #standard_path = "C:/temp/HDF5-Reading/220130_1734_604_J1_anode_half_cell_in-situ_Z30_Y5430_15000eV_1p44um_500ms/" # '/mnt/raid/CT/2022/'
-
 standard_path = r'C:/delete/reg_data/18_230606_2044_AlTi_F_Ref_tomo___Z25_Y6500_25000eV_10x_400ms'
 
 Ui_on_the_fly_Window, Q_on_the_fly_Window = loadUiType('on_the_fly_CT_reco_hdf_dock_widget.ui')  # connect to the GUI for the program
 
 class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
+
+
     def __init__(self):
         super(On_the_fly_CT_tester, self).__init__()
         self.setupUi(self)
-        self.setAcceptDrops(True)
         self.setWindowTitle('On-the-fly CT Reco')
 
         #connect buttons to actions
@@ -46,7 +44,6 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_ringradius.valueChanged.connect(self.check)
         self.COR.valueChanged.connect(self.check)
         self.COR_roll.valueChanged.connect(self.check)
-        self.COR_roll.valueChanged.connect(self.rotation_correction)
         self.Offset_Angle.valueChanged.connect(self.check)
         self.speed_W.valueChanged.connect(self.check)
         self.algorithm_list.currentIndexChanged.connect(self.check)
@@ -64,9 +61,9 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_bottom.valueChanged.connect(self.update_window_size)
         self.spinBox_left.valueChanged.connect(self.update_window_size)
         self.spinBox_right.valueChanged.connect(self.update_window_size)
-        self.angle_directory_combobox.currentIndexChanged.connect(self.reload_angles) #change to reload angles if combobox changed
 
-        self.block_size = 64        #volume will be reconstructed blockwise to reduce needed RAM
+
+        self.block_size = 16        #volume will be reconstructed blockwise to reduce needed RAM
         self.extend_FOV = 0.15      #the reconstructed area will be enlarged in order to allow off axis scans
         self.crop_offset = 0        #needed for proper volume cropping
         #self.new = 1
@@ -107,16 +104,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.Qchannel_name.setText(channel_name)
         self.pvaServer.start()
 
-        QtCore.QTimer.singleShot(0, self.show_dev_warning)
 
-    def show_dev_warning(self):
-        QtWidgets.QMessageBox.warning(
-            self,
-            "Dev_mus",
-            "Watch out, you're running dev_mus version\n\n"
-            "Switch back to main if needed."
-            f"Channel name : {channel_name}"
-        )
 
     def check(self):    #AUTO UPDATE ON/OFF?
 
@@ -124,16 +112,10 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
              self.check_test_button()
          return
 
-    def rotation_correction(self):      # display the CAM-ROT correction
-        CAM_rot = (numpy.arctan(self.COR_roll.value()))*180/math.pi
-        s = "{:.3f}".format(CAM_rot)
-        self.label_26.setText('CAM-rot rel: '+ s + '°')
-
-
     def update_window_size(self):
         self.new = 1
         #update possible range for crop inputs
-        print(self.slice_size)
+        #print(self.slice_size)
         self.spinBox_left.setMaximum(self.slice_size-self.spinBox_right.value() -1)
         self.spinBox_right.setMaximum(self.slice_size-self.spinBox_left.value() -1)
         self.spinBox_top.setMaximum(self.slice_size-self.spinBox_bottom.value() -1)
@@ -232,234 +214,26 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
 
 
-    def set_path(self): #boilerplate load function
-        path_klick, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            'Select hdf5-file, please.',
-            standard_path,
-            'HDF5 files (*.h5 *.hdf5 *.hdf);;All files (*)'
-        )
-
-        if path_klick:
-            self.load_hdf5_file(path_klick)
-        else:
-            print("User cancelled the dialog.")
-            self.buttons_activate_load()
-
-    def load_hdf5_file(self, path):
-        path = path.replace('\\', '/')  # keeps your existing path parsing working
-
-        if not path.lower().endswith(('.h5', '.hdf5', '.hdf')):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Unsupported file",
-                "Please drop or select an HDF5 file: .h5, .hdf5, or .hdf"
-            )
-            return
-
-        if not os.path.isfile(path):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "File not found",
-                f"The selected file does not exist:\n{path}"
-            )
-            return
-
+    def set_path(self):
+        #grey out the buttons while program is busy
         self.buttons_deactivate_all()
         self.pushReconstruct.setText('Busy')
         self.pushReconstruct_all.setText('Busy\n')
         self.new = 1
         self.extend_FOV_fixed_ImageJ_Stream = 0.15
 
-        self.path_klick = path
-        print('path loaded: ', self.path_klick)
+        #ask for hdf5-file
+        path_klick = QtWidgets.QFileDialog.getOpenFileName(self, 'Select hdf5-file, please.', standard_path)
 
-        try:
+        if path_klick[0]:
+            self.path_klick = path_klick[0]
+            print('path klicked: ', self.path_klick)
             self.cut_path_name()
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Could not load HDF5 file",
-                str(exc)
-            )
+        else:
+            print("User cancelled the dialog.")
             self.buttons_activate_load()
-            self.pushReconstruct.setText('Test')
-            self.pushReconstruct_all.setText('Reconstruct\n Volume')
 
 
-    def _hdf5_path_from_event(self, event): #check if file opened is actually h5, either when dragdropped or usign Load
-        if not event.mimeData().hasUrls():
-            return None
-
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                path = url.toLocalFile()
-                if path.lower().endswith(('.h5', '.hdf5', '.hdf')):
-                    return path
-
-        return None
-
-    def dragEnterEvent(self, event): #Drag and droop support
-        if self._hdf5_path_from_event(event):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event): #Drag and droop support
-        if self._hdf5_path_from_event(event):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event): #Drag and droop support
-        path = self._hdf5_path_from_event(event)
-
-        if path:
-            event.acceptProposedAction()
-            self.load_hdf5_file(path)
-        else:
-            event.ignore()
-
-    def read_angles_from_hdf5(self):
-        if not hasattr(self, "path_klick"):
-            print("No HDF5 file loaded yet.")
-            return False
-
-        angles_destination = '/entry/instrument/NDAttributes/' + str(self.angle_directory_combobox.currentText())
-        print('Reloading angles from:', angles_destination)
-
-        try:
-            with h5py.File(self.path_klick, 'r') as f:
-                if angles_destination not in f:
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Angles not found",
-                        f"Could not find angle dataset:\n{angles_destination}"
-                    )
-                    return False
-
-                line_proxy = f[angles_destination]
-
-                if self.FF_before_after_checkbox.isChecked():
-                    self.graph = numpy.array(
-                        line_proxy[
-                        self.spinBox_number_FFs.value():
-                        -self.spinBox_number_FFs.value()
-                        ]
-                    )
-                else:
-                    self.graph = numpy.array(
-                        line_proxy[self.spinBox_number_FFs.value():]
-                    )
-
-                self.unwrapped = numpy.unwrap(numpy.deg2rad(self.graph))
-                self.span = abs(numpy.rad2deg(self.unwrapped[-1]-self.unwrapped[0]))
-
-                if self.span < 120:
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Invalid angles list",
-                        "Insufficient angular range : either change the selected angles list or the sample did not rotate"
-                    )
-                    return False
-
-                if numpy.isnan(numpy.sum(self.graph)):
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Invalid angles list",
-                        "NaN found in angles array : change the selected angles list"
-                    )
-                    return False
-
-
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Could not reload angles",
-                str(exc)
-            )
-            return False
-
-        print('found number of angles:', self.graph.shape, 'angles:', self.graph)
-
-        # Find rotation start again
-        i = 0
-        try:
-            while round(self.graph[i]) < 1:
-                self.last_zero_proj = i + 3
-                i += 1
-        except IndexError:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Could not find rotation start",
-                "Could not find the last zero projection. Try another angle path."
-            )
-            return False
-
-        print('Last projection at 0 degree/still speeding up:', self.last_zero_proj)
-
-        # Update angle list used by reconstruction
-        self.w = self.graph
-
-        # Recalculate angular speed
-        try:
-            start = round((self.w.shape[0] + 1) / 4)
-            stop = round((self.w.shape[0] + 1) * 7 / 8)
-
-            poly_coeff = numpy.polyfit(
-                numpy.arange(len(self.w[start:stop])),
-                self.w[start:stop],
-                1,
-                rcond=None,
-                full=False,
-                w=None,
-                cov=False
-            )
-
-            print(
-                'Polynom coefficients',
-                poly_coeff,
-                'Detected angular step per image:',
-                poly_coeff[0]
-            )
-
-            # Avoid triggering self.check() while we are already updating
-            old_state = self.speed_W.blockSignals(True)
-            self.speed_W.setValue(poly_coeff[0])
-            self.speed_W.blockSignals(old_state)
-
-        except Exception as exc:
-            print("Could not calculate angular speed:", exc)
-            return False
-        return True
-
-    def reload_angles(self):
-        if not hasattr(self, "path_klick"):
-            return
-
-        print("Angle directory changed.")
-
-        self.buttons_deactivate_all()
-        self.pushReconstruct.setText('Busy')
-        self.pushReconstruct_all.setText('Busy\n')
-        QtWidgets.QApplication.processEvents()
-
-        ok = self.read_angles_from_hdf5()
-
-        if ok:
-            # If normalized data is already in RAM, only reconstruct.
-            # If not, load the current slice first.
-            if hasattr(self, "Norm"):
-                self.reconstruct()
-            else:
-                self.load()
-        else:
-            self.buttons_activate_load()
-            self.buttons_activate_reco()
-            self.buttons_activate_crop_volume()
-            self.buttons_activate_reco_all()
-            self.pushReconstruct.setText('Test')
-            self.pushReconstruct_all.setText('Reconstruct\n Volume')
 
     def cut_path_name(self):
         #analyse and cut the path in pieces and get relevant information from raw-file
@@ -501,12 +275,27 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         print('set middle height as slice number:  ', self.slice_number.value())
         self.slice_number.setEnabled(True)
 
-        if not self.read_angles_from_hdf5():
-            self.buttons_activate_load()
-            self.buttons_activate_reco()
-            self.buttons_activate_crop_volume()
-            self.buttons_activate_reco_all()
-            return None
+        #get rotation angles
+        #self.line_proxy = f['/entry/instrument/NDAttributes/CT_MICOS_W']
+        self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W1']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W2']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_HUBER_W']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_W']
+        #print('self.line_proxy', self.line_proxy)
+        if self.FF_before_after_checkbox.isChecked():
+            print('---------------------FF before after--------------------------------')
+            self.graph = numpy.array(self.line_proxy[self.spinBox_number_FFs.value():-self.spinBox_number_FFs.value()])
+        else:
+            self.graph = numpy.array(self.line_proxy[self.spinBox_number_FFs.value():])
+        #print('found number of angles:  ', self.graph.shape, '      angles: ', self.graph)
+
+        #find rotation start
+        i = 0
+        while round(self.graph[i]) < 1:  # notice the last projection at below 0.5°
+            self.last_zero_proj = i + 3  # assumes 3 images for speeding up the motor
+            i = i + 1
+        #print(self.graph[1021:1500])
+        print('Last projection at 0 degree/still speeding up: number', self.last_zero_proj)
 
         if self.COR.value() == 0:
             self.COR.setValue(round(self.vol_proxy.shape[2] / 2))
@@ -605,7 +394,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
             print('ring handling')
 
             #self.Norm = rem.remove_stripe_based_sorting(self.Norm, size=self.spinBox_ringradius.value())
-            #self.Norm = rem.remove_all_stripe(self.Norm, snr=3.1, la_size=self.spinBox_ringradius.value(), sm_size=21) # ONLY 2D????
+            self.Norm = rem.remove_all_stripe(self.Norm, snr=3.0, la_size=51, sm_size=21) # ONLY 2D????
 
 
             self.proj_sum = numpy.mean(self.Norm, axis = 0)
@@ -620,12 +409,16 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
             correction_map = numpy.clip(correction_map, 0.5, 2.0)
             print('correction_map dimensions', correction_map.shape, 'correction_map min vs max', numpy.amin(correction_map), numpy.amax(correction_map))
 
-            i=0
-            while i < self.Norm.shape[0]:
-                self.Norm[i, :] = numpy.divide(self.Norm[i, :], correction_map[0,:])
-                self.progressBar.setValue((i + 1) * 100 / self.Norm.shape[0])
-                QtWidgets.QApplication.processEvents()
-                i = i+1
+
+
+            self.Norm = numpy.divide(self.Norm, correction_map[0,:])
+
+            #i=0
+            #while i < self.Norm.shape[0]:
+            #    self.Norm[i, :] = numpy.divide(self.Norm[i, :], correction_map[0,:])
+            #    self.progressBar.setValue((i + 1) * 100 / self.Norm.shape[0])
+            #    QtWidgets.QApplication.processEvents()
+            #    i = i+1
 
 
 
@@ -687,27 +480,20 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
         # create list with x-positions of projections
         if self.comboBox_180_360.currentText() == '360 - axis right':
-            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] # * (self.number_of_used_projections)
+            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] * (self.number_of_used_projections)
             #center_list = [self.COR.value() +  self.full_size] * (self.number_of_used_projections)
         else:
-            #center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
-            center_list = self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)
-
-        print('center list is ', center_list)
+            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
 
         # create one sinogram in the form [z, y, x]
         transposed_sinos = numpy.zeros((min(self.number_of_used_projections, self.Norm.shape[0]), 1, self.full_size), dtype=float)
         transposed_sinos[:,0,:] = self.Norm[self.last_zero_proj : min(self.last_zero_proj + self.number_of_used_projections, self.Norm.shape[0]),:]
-
-        print('transposed sinos is ', transposed_sinos.shape)
 
 
 
         #extend data with calculated parameter, compute logarithm, remove NaN-values
         ### cut and reorder 360°-sinos to 180°-sinos, work in progress !!!
         extended_sinos = tomopy.misc.morph.pad(transposed_sinos, axis=2, npad=round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size), mode='edge')
-
-        print('extended sinos is', extended_sinos.shape)
 
         # for 360° scans crop the padded area opposite of the axis
         print('cropping empty area')
@@ -730,13 +516,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         #apply phase retrieval if desired
         if self.checkBox_phase_2.isChecked() == True:
             print('applying phase contrast')
-            print('TEST')
-            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value() / 1e4,
-                                                              dist=self.doubleSpinBox_distance_2.value(),
-                                                              energy=self.doubleSpinBox_Energy_2.value(),
-                                                              alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
-                                                              ncore=None, nchunk=None)
-            #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
         print('ring_filter sino_shape', extended_sinos[:,0,:].shape)
 
@@ -760,7 +540,8 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
         # trim reconstructed slice
         if self.comboBox_180_360.currentText() == '180 - axis centered':
-            slices = slices[:, round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2),round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2)]
+            slices = slices[:, round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size),round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)]
+            #slices = slices[:, : ,: ]
         else:
             slices = slices[:, round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size),round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)]
         self.slice_size = slices.shape[1]
@@ -884,7 +665,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
             # add ruler -X
             for r in range(round(self.slice.shape[1] / 2), 0, -round(self.spinBox_pixel_grid.value())):
-                print(r)
+                #print(r)
                 cv2.line(self.slice, (r, 0),   (r, self.slice.shape[1]), (65535, 65535, 65535), 4)
                 cv2.putText(self.slice, str(round((r - (self.slice.shape[1] / 2)) / 5) * 5), (r + 20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.750, (65535, 65535, 65535), thickness=2)
 
@@ -933,7 +714,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         if self.number_of_projections * self.speed_W.value() >= 270:
             self.number_of_used_projections = round(360 / self.speed_W.value())
         else:
-            print('smaller than 3/2 Pi')
+            #print('smaller than 3/2 Pi')
             self.number_of_used_projections = round(180 / self.speed_W.value())
         print('number of used projections', self.number_of_used_projections)
 
@@ -977,69 +758,83 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         i = 0
         while (i < math.ceil((self.spinBox_last.value() - self.spinBox_first.value()) / self.block_size)):       #Need to fix the rest of slices
 
+            start_time = time.time()
             print('Reconstructing block', i + 1, 'of', math.ceil((self.spinBox_last.value() - self.spinBox_first.value()) / self.block_size))
+            start_idx = i * self.block_size + self.spinBox_first.value()
+            end_idx = (i + 1) * self.block_size + self.spinBox_first.value()
 
-            FFs_vol = self.vol_proxy[0:self.spinBox_number_FFs.value() - 1, i * self.block_size + self.spinBox_first.value(): (i + 1) * self.block_size + self.spinBox_first.value(), :]
-            FFmean_vol = numpy.mean(FFs_vol, axis=0)
+            FFs_vol = self.vol_proxy[0:self.spinBox_number_FFs.value() - 1, start_idx:end_idx, :]
+            FFmean_vol = numpy.mean(FFs_vol, axis=0).astype(numpy.float32)
             print('FFs for normalization ', self.spinBox_number_FFs.value(), FFmean_vol.shape)
-            Sino_vol = self.vol_proxy[self.spinBox_number_FFs.value(): -self.spinBox_number_FFs.value(), i * self.block_size + self.spinBox_first.value(): (i + 1) * self.block_size + self.spinBox_first.value(), :]
-            self.Norm_vol = numpy.divide(Sino_vol - self.spinBox_DF.value(), FFmean_vol - self.spinBox_DF.value() - self.spinBox_back_illumination.value())
+
+            Sino_vol = self.vol_proxy[self.spinBox_number_FFs.value(): -self.spinBox_number_FFs.value(), start_idx:end_idx, :].astype(numpy.float32)
+            DF_val = self.spinBox_DF.value()
+            back_illum_val = self.spinBox_back_illumination.value()
+            numerator = Sino_vol - DF_val
+            denominator = FFmean_vol - (DF_val + back_illum_val)
+            inv_denom = 1.0 / denominator  # <- nur eine Division!
+            self.Norm_vol = numerator * inv_denom
             print('sinogram shape', self.Norm_vol.shape)
+            end_time = time.time()
+            print("Normalization duration: {:.3f} seconds".format(end_time - start_time))
 
 
+            start_time = time.time()
             # Ring artifact handling
             if self.spinBox_ringradius.value() != 0:
-
                 self.proj_sum = numpy.mean(self.Norm_vol, axis=0)
                 print('proj_sum dimensions', self.proj_sum.shape)
-                proj_sum_filtered = median_filter(self.proj_sum, size= (1, self.spinBox_ringradius.value()), mode='nearest')
-                print('proj_sum_filtered dimensions', proj_sum_filtered.shape)
-                correction_map_vol = numpy.divide(self.proj_sum, proj_sum_filtered)
-                correction_map_vol = numpy.clip(correction_map_vol, 0.5, 2.0)
-                print('correction_map_vol dimensions', correction_map_vol.shape, 'correction_map min vs max',
-                      numpy.amin(correction_map_vol), numpy.amax(correction_map_vol))
 
-                j = 0
-                while j < self.Norm_vol.shape[0]:
-                    self.Norm_vol[j, :,:] = numpy.divide(self.Norm_vol[j, :,:], correction_map_vol)
-                    j = j + 1
+                proj_sum_filtered = median_filter(self.proj_sum, size=(1, self.spinBox_ringradius.value()), mode='nearest')
+                print('proj_sum_filtered dimensions', proj_sum_filtered.shape)
+
+                inv_proj_sum = 1.0 / self.proj_sum
+                #correction_map_vol = self.proj_sum * inv_proj_sum_filtered
+                #correction_map_vol = numpy.clip(correction_map_vol.astype(numpy.float32), 0.5, 2.0)
+                inv_correction_map_vol = inv_proj_sum * proj_sum_filtered
+                inv_correction_map_vol = numpy.clip(inv_correction_map_vol.astype(numpy.float32), 0.5, 2.0)
+
+                print('inv_correction_map_vol dimensions', inv_correction_map_vol.shape,
+                    'correction_map min vs max',
+                    numpy.amin(inv_correction_map_vol), numpy.amax(inv_correction_map_vol))
+
+                self.Norm_vol=self.Norm_vol * inv_correction_map_vol
+
+                #j = 0
+                #while j < self.Norm_vol.shape[0]:
+                #    self.Norm_vol[j, :,:] = numpy.divide(self.Norm_vol[j, :,:], correction_map_vol)
+                #    j = j + 1
                 print('Norm_vol.shape', self.Norm_vol.shape)
 
 
                 print('finished ring handling')
             else:
                 print('did not do ring handling')
+            end_time = time.time()
+            print("Ring filter duration: {:.3f} seconds".format(end_time - start_time))
 
 
-
-
+            start_time = time.time()
             #extend data, take logarithm, remove NaN-values
             extended_sinos = self.Norm_vol[self.last_zero_proj : min(self.last_zero_proj + self.number_of_used_projections, self.Norm_vol.shape[0]), :, :]
-
-            extended_sinos = tomopy.misc.morph.pad(extended_sinos, axis=2, npad=round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size), mode='edge')
             extended_sinos = tomopy.minus_log(extended_sinos)
-            #extended_sinos = (extended_sinos + 9.68) * 1000  # conversion factor to uint
             extended_sinos = numpy.nan_to_num(extended_sinos, copy=True, nan=1.0, posinf=1.0, neginf=1.0)
+            extended_sinos = tomopy.misc.morph.pad(extended_sinos, axis=2, npad=round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size), mode='edge')
+            
+            #extended_sinos = (extended_sinos + 9.68) * 1000  # conversion factor to uint
+            end_time = time.time()
+            print("Log/NaN/pad duration: {:.3f} seconds".format(end_time - start_time))
 
             #apply phase retrieval if desired
             if self.checkBox_phase_2.isChecked() == True:
-                print('TEST')
-                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value()/1e4,
-                                                                  dist=self.doubleSpinBox_distance_2.value(),
-                                                                  energy=self.doubleSpinBox_Energy_2.value(),
-                                                                  alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
-                                                                  ncore=None, nchunk=None)
-
-                #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
             # create list with COR-positions
             center_list = [self.COR.value() + self.COR_roll.value() * (i + self.spinBox_first.value()) * self.block_size + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (
                 self.number_of_used_projections)
-            print(len(center_list))
-            print(center_list)
-            print('printing')
 
 
+            start_time = time.time()
             #reconstruct
             if self.algorithm_list.currentText() == 'FBP_CUDA':
                 options = {'proj_type': 'cuda', 'method': 'FBP_CUDA'}
@@ -1049,51 +844,79 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
                 slices = tomopy.recon(extended_sinos, new_list, center=center_list,
                                       algorithm=self.algorithm_list.currentText(),
                                       filter_name=self.filter_list.currentText())
+            end_time = time.time()
+            print("reconstruction duration: {:.3f} seconds".format(end_time - start_time))
 
+
+            start_time = time.time()
             # scale with pixel size to attenuation coefficients
-            slices = slices * (10000 / self.pixel_size.value())
+            scale_factor = 10000.0 * (1.0 / self.pixel_size.value())
+            #slices = slices * scale_factor
+
+            end_time = time.time()
+            print("scaling for attenuation coefficient; duration: {:.3f} seconds".format(end_time - start_time))
+
 
             #crop reconstructed data
 
+            #if self.comboBox_180_360.currentText() == '180 - axis centered':
+            #    slices = slices[:, round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2),round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2)]
+            #else:
+            #    slices = slices[:, round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size),round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size)]
+
+            start_time = time.time()
             if self.comboBox_180_360.currentText() == '180 - axis centered':
-                slices = slices[:, round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2),round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2): -round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size / 2)]
+                offset = round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)
             else:
-                slices = slices[:, round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size),round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size): -round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size)]
+                offset = round((self.extend_FOV_fixed_ImageJ_Stream - 1) * self.full_size)
+            slices = slices[:, offset:-offset, offset:-offset]
 
             #slices = slices[:, round(self.extend_FOV * self.full_size /2): -round(self.extend_FOV * self.full_size /2), round(self.extend_FOV * self.full_size /2): -round(self.extend_FOV * self.full_size /2)]
             slices = tomopy.circ_mask(slices, axis=0, ratio=1.0)
+            end_time = time.time()
+            print("crop and circ mask; duration: {:.3f} seconds".format(end_time - start_time))
 
-            original_reconstruction = slices[:, self.spinBox_top.value():-self.spinBox_bottom.value() - 1,self.spinBox_left.value():-self.spinBox_right.value() - 1]
-            print('original_reconstruction.shape', original_reconstruction.shape)
+            start_time = time.time()
+            if any(v != 0 for v in (self.spinBox_top.value(), self.spinBox_bottom.value(), self.spinBox_left.value(), self.spinBox_right.value())):
+                slices = slices[:, self.spinBox_top.value() : slices.shape[1] - self.spinBox_bottom.value(), self.spinBox_left.value() : slices.shape[2] - self.spinBox_right.value()]
+            #original_reconstruction = slices[:, self.spinBox_top.value():-self.spinBox_bottom.value() - 1,self.spinBox_left.value():-self.spinBox_right.value() - 1]
+            print('slices.shape', slices.shape)
+            end_time = time.time()
+            print("user crop; duration: {:.3f} seconds".format(end_time - start_time))
 
-            #16-bit integer conversion
-            if self.radioButton_16bit_integer.isChecked() == True:
-                ima3 = 65535 * (original_reconstruction - self.int_low.value()) / (self.int_high.value() - self.int_low.value())
-                ima3 = numpy.clip(ima3, 1, 65534)
+            start_time = time.time()
+            int_low_val = self.int_low.value()
+            int_high_val = self.int_high.value()
+
+            range_val = int_high_val - int_low_val
+
+            if self.radioButton_16bit_integer.isChecked():
+                inv_range = 65535.0 / range_val  # ← einmalige Division
+                ima3 = numpy.clip((scale_factor * slices - int_low_val) * inv_range , 0, 65535)
                 slices_save = ima3.astype(numpy.uint16)
 
-            if self.radioButton_32bit_float.isChecked() == True:
-                slices_save = original_reconstruction
+            elif self.radioButton_32bit_float.isChecked():
+                slices_save = slices * scale_factor
+
 
             print('Reconstructed Volume is', slices_save.shape)
+            end_time = time.time()
+            print("16-bit conversion; duration: {:.3f} seconds".format(end_time - start_time))
 
-
+            
             #save data
-            if self.save_tiff.isChecked() == True:
-
-                # write the reconstructed block to disk as TIF-file
-                a = 1
-                while (a < self.block_size + 1) and (a < slices_save.shape[0] + 1):
-                    self.progressBar.setValue((a + (i * self.block_size)) * 100 / (self.spinBox_last.value() - self.spinBox_first.value()))
-                    QtCore.QCoreApplication.processEvents()
-                    time.sleep(0.02)
-                    filename2 = self.path_out_reconstructed_full + self.namepart + '_' + str(
-                        a + self.crop_offset + i * self.block_size).zfill(4) + '.tif'
-                    print('Writing Reconstructed Slices:', filename2)
-                    slice_save = slices_save[a - 1, :, :]
-                    img = Image.fromarray(slice_save)
-                    img.save(filename2)
-                    a = a + 1
+            if self.save_tiff.isChecked() == True:            
+                
+                start_time = time.time()
+                for a in range(min(self.block_size,slices_save.shape[0])):
+                    #print('Writing Reconstructed Slices:', str(a + self.crop_offset + i * self.block_size).zfill(4))
+                    img = Image.fromarray(slices_save[a - 1, :, :])
+                    img.save(self.path_out_reconstructed_full + self.namepart + '_' + str(a + self.crop_offset + i * self.block_size).zfill(4) + '.tif')
+                self.progressBar.setValue((a + (i * self.block_size)) * 100 / (self.spinBox_last.value() - self.spinBox_first.value()))
+                QtCore.QCoreApplication.processEvents()
+                time.sleep(0.02)
+                end_time = time.time()
+                print("saving tiff; duration: {:.3f} seconds".format(end_time - start_time))
 
             if self.save_hdf5.isChecked() == True:
                 if i == 0:

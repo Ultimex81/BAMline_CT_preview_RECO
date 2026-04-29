@@ -1,11 +1,10 @@
-import multiprocessing
-multiprocessing.freeze_support()
 import numpy
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.uic import loadUiType
 from PIL import Image
 import h5py
 import tomopy
+import astra
 import math
 import time
 import os
@@ -13,27 +12,26 @@ import csv
 import cv2                                      #to install package with pycharm by finding "opencv-python"
 from scipy.ndimage.filters import gaussian_filter, median_filter
 import pvaccess as pva                          #to install package with pycharm search for "pvapy"
-#import algotom.prep.removal as rem
-#import algotom.prep.calculation as calc
+import algotom.prep.removal as rem
+import algotom.prep.calculation as calc
 
 
 # On-the-fly-CT Reco
-version = "Version 2024.12.17 a"
+version = "Version 2024.06.07 d"
 
 #Install ImageJ-PlugIn: EPICS AreaDetector NTNDA-Viewer, look for the channel specified here under channel_name, consider multiple users on servers!!!
-channel_name = 'BAMline:CTReco_TestMUS'
+channel_name = 'BAMline:CTReco'
 #standard_path = "C:/temp/HDF5-Reading/220130_1734_604_J1_anode_half_cell_in-situ_Z30_Y5430_15000eV_1p44um_500ms/" # '/mnt/raid/CT/2022/'
-
 standard_path = r'C:/delete/reg_data/18_230606_2044_AlTi_F_Ref_tomo___Z25_Y6500_25000eV_10x_400ms'
 
 Ui_on_the_fly_Window, Q_on_the_fly_Window = loadUiType('on_the_fly_CT_reco_hdf_dock_widget.ui')  # connect to the GUI for the program
 
 class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
+
     def __init__(self):
         super(On_the_fly_CT_tester, self).__init__()
         self.setupUi(self)
-        self.setAcceptDrops(True)
         self.setWindowTitle('On-the-fly CT Reco')
 
         #connect buttons to actions
@@ -46,7 +44,6 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_ringradius.valueChanged.connect(self.check)
         self.COR.valueChanged.connect(self.check)
         self.COR_roll.valueChanged.connect(self.check)
-        self.COR_roll.valueChanged.connect(self.rotation_correction)
         self.Offset_Angle.valueChanged.connect(self.check)
         self.speed_W.valueChanged.connect(self.check)
         self.algorithm_list.currentIndexChanged.connect(self.check)
@@ -64,10 +61,10 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_bottom.valueChanged.connect(self.update_window_size)
         self.spinBox_left.valueChanged.connect(self.update_window_size)
         self.spinBox_right.valueChanged.connect(self.update_window_size)
-        self.angle_directory_combobox.currentIndexChanged.connect(self.reload_angles) #change to reload angles if combobox changed
 
-        self.block_size = 64        #volume will be reconstructed blockwise to reduce needed RAM
-        self.extend_FOV = 0.15      #the reconstructed area will be enlarged in order to allow off axis scans
+
+        self.block_size = 256        #volume will be reconstructed blockwise to reduce needed RAM
+        #self.extend_FOV = 0.25      #the reconstructed area will be enlarged in order to allow off axis scans
         self.crop_offset = 0        #needed for proper volume cropping
         #self.new = 1
 
@@ -107,28 +104,75 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.Qchannel_name.setText(channel_name)
         self.pvaServer.start()
 
-        QtCore.QTimer.singleShot(0, self.show_dev_warning)
+    # --- FBP recon 2D on GPU ---
+    def FBP_ASTRA_GPU(self, proj, angle, center, i=None, GPU_numb=None, filter=None):
+        # --- None ---
+        if filter == None: filter = 'shepp-logan'
+        # print('Algorithm: FBP ASTRA')
+        # print("slice: ", i)
+        #rec = numpy.zeros([proj.shape[1], proj.shape[1]], dtype=numpy.float32)
+        cor_shift = (proj.shape[1] / 2 - center)
+        # print("cor_shift: ", cor_shift)
+        # print("rec.shape: ",rec.shape)
+        # ----- create geometries
+        vol_geom = astra.create_vol_geom(proj.shape[1], proj.shape[1])
+        proj_geom = astra.create_proj_geom('parallel', 1.0, proj.shape[1], angle)
+        # ----- projection geometry with shifted CoR
+        proj_geom_cor = astra.geom_postalignment(proj_geom, cor_shift)
+        proj_id_cor = astra.create_projector('cuda', proj_geom_cor, vol_geom)
+        sinogram_id = astra.data2d.link('-sino', proj_geom_cor, numpy.ascontiguousarray(proj))
+        # sinogram_id, sinogram = astra.create_sino(numpy.ascontiguousarray(proj), proj_id_cor)
+        # not sure why not works!
+        # change the proj_geom metadata ...
+        astra.data2d.change_geometry(sinogram_id, proj_geom_cor)
+        # reconstruction
+        recon_id = astra.data2d.create('-vol', vol_geom)
+        # ----- create configuration
+        cfg = astra.astra_dict('FBP_CUDA')
+        cfg['ReconstructionDataId'] = recon_id
+        cfg['ProjectionDataId'] = sinogram_id
+        cfg['option'] = {}
+        cfg['FilterType'] = filter  # 'gaussian' #'shepp-logan'
+        if GPU_numb is not None:
+            GPU_use = i % GPU_numb
+            # print("GPU_use: ", GPU_use)
+            cfg['option']['GPUindex'] = GPU_use
+        else:
+            cfg['option']['GPUindex'] = 0  # decide for 0 (GPU1) or 1 (GPU2)
+        cfg['option']['MinConstraint'] = 0
+        # ----- Create and run the algorithm object from the configuration structure
+        fbp_id = astra.algorithm.create(cfg)
+        astra.algorithm.run(fbp_id)
+        # ----- get reconstruction result
+        rec = astra.data2d.get(recon_id)
+        # ----- garbage disposal -----
+        astra.data2d.delete(sinogram_id)
+        astra.data2d.delete(recon_id)
+        astra.projector.delete(proj_id_cor)
+        astra.algorithm.delete(fbp_id)
+        if i is not None:
+            return i, rec
+        return rec
 
-    def show_dev_warning(self):
-        QtWidgets.QMessageBox.warning(
-            self,
-            "Dev_mus",
-            "Watch out, you're running dev_mus version\n\n"
-            "Switch back to main if needed."
-            f"Channel name : {channel_name}"
-        )
+    # --- 3D reconstruction ---
+    def recon_3D_FBP(self, sino, angle, center, filter=None):
+        start = time.time()
+        recon = numpy.zeros((sino.shape[1], sino.shape[2], sino.shape[2]))
+        # for j in range(recon.shape[0]):
+        for j in range(recon.shape[0]):
+            # if j%100==0: print("recon slice: ", j)
+            recon[j, :, :] = self.FBP_ASTRA_GPU(sino[:, j, :], angle=angle, center=center, i=None, GPU_numb=None,
+                                           filter=filter)
+        end = time.time()
+        print("reconstruction time: ", end - start)
+        return recon
+
 
     def check(self):    #AUTO UPDATE ON/OFF?
 
          if self.auto_update.isChecked():
              self.check_test_button()
          return
-
-    def rotation_correction(self):      # display the CAM-ROT correction
-        CAM_rot = (numpy.arctan(self.COR_roll.value()))*180/math.pi
-        s = "{:.3f}".format(CAM_rot)
-        self.label_26.setText('CAM-rot rel: '+ s + '°')
-
 
     def update_window_size(self):
         self.new = 1
@@ -232,234 +276,26 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
 
 
-    def set_path(self): #boilerplate load function
-        path_klick, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            'Select hdf5-file, please.',
-            standard_path,
-            'HDF5 files (*.h5 *.hdf5 *.hdf);;All files (*)'
-        )
-
-        if path_klick:
-            self.load_hdf5_file(path_klick)
-        else:
-            print("User cancelled the dialog.")
-            self.buttons_activate_load()
-
-    def load_hdf5_file(self, path):
-        path = path.replace('\\', '/')  # keeps your existing path parsing working
-
-        if not path.lower().endswith(('.h5', '.hdf5', '.hdf')):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Unsupported file",
-                "Please drop or select an HDF5 file: .h5, .hdf5, or .hdf"
-            )
-            return
-
-        if not os.path.isfile(path):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "File not found",
-                f"The selected file does not exist:\n{path}"
-            )
-            return
-
+    def set_path(self):
+        #grey out the buttons while program is busy
         self.buttons_deactivate_all()
         self.pushReconstruct.setText('Busy')
         self.pushReconstruct_all.setText('Busy\n')
         self.new = 1
-        self.extend_FOV_fixed_ImageJ_Stream = 0.15
+        self.extend_FOV_fixed_ImageJ_Stream = 0.05
 
-        self.path_klick = path
-        print('path loaded: ', self.path_klick)
+        #ask for hdf5-file
+        path_klick = QtWidgets.QFileDialog.getOpenFileName(self, 'Select hdf5-file, please.', standard_path)
 
-        try:
+        if path_klick[0]:
+            self.path_klick = path_klick[0]
+            print('path klicked: ', self.path_klick)
             self.cut_path_name()
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Could not load HDF5 file",
-                str(exc)
-            )
+        else:
+            print("User cancelled the dialog.")
             self.buttons_activate_load()
-            self.pushReconstruct.setText('Test')
-            self.pushReconstruct_all.setText('Reconstruct\n Volume')
 
 
-    def _hdf5_path_from_event(self, event): #check if file opened is actually h5, either when dragdropped or usign Load
-        if not event.mimeData().hasUrls():
-            return None
-
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                path = url.toLocalFile()
-                if path.lower().endswith(('.h5', '.hdf5', '.hdf')):
-                    return path
-
-        return None
-
-    def dragEnterEvent(self, event): #Drag and droop support
-        if self._hdf5_path_from_event(event):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event): #Drag and droop support
-        if self._hdf5_path_from_event(event):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event): #Drag and droop support
-        path = self._hdf5_path_from_event(event)
-
-        if path:
-            event.acceptProposedAction()
-            self.load_hdf5_file(path)
-        else:
-            event.ignore()
-
-    def read_angles_from_hdf5(self):
-        if not hasattr(self, "path_klick"):
-            print("No HDF5 file loaded yet.")
-            return False
-
-        angles_destination = '/entry/instrument/NDAttributes/' + str(self.angle_directory_combobox.currentText())
-        print('Reloading angles from:', angles_destination)
-
-        try:
-            with h5py.File(self.path_klick, 'r') as f:
-                if angles_destination not in f:
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Angles not found",
-                        f"Could not find angle dataset:\n{angles_destination}"
-                    )
-                    return False
-
-                line_proxy = f[angles_destination]
-
-                if self.FF_before_after_checkbox.isChecked():
-                    self.graph = numpy.array(
-                        line_proxy[
-                        self.spinBox_number_FFs.value():
-                        -self.spinBox_number_FFs.value()
-                        ]
-                    )
-                else:
-                    self.graph = numpy.array(
-                        line_proxy[self.spinBox_number_FFs.value():]
-                    )
-
-                self.unwrapped = numpy.unwrap(numpy.deg2rad(self.graph))
-                self.span = abs(numpy.rad2deg(self.unwrapped[-1]-self.unwrapped[0]))
-
-                if self.span < 120:
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Invalid angles list",
-                        "Insufficient angular range : either change the selected angles list or the sample did not rotate"
-                    )
-                    return False
-
-                if numpy.isnan(numpy.sum(self.graph)):
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Invalid angles list",
-                        "NaN found in angles array : change the selected angles list"
-                    )
-                    return False
-
-
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Could not reload angles",
-                str(exc)
-            )
-            return False
-
-        print('found number of angles:', self.graph.shape, 'angles:', self.graph)
-
-        # Find rotation start again
-        i = 0
-        try:
-            while round(self.graph[i]) < 1:
-                self.last_zero_proj = i + 3
-                i += 1
-        except IndexError:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Could not find rotation start",
-                "Could not find the last zero projection. Try another angle path."
-            )
-            return False
-
-        print('Last projection at 0 degree/still speeding up:', self.last_zero_proj)
-
-        # Update angle list used by reconstruction
-        self.w = self.graph
-
-        # Recalculate angular speed
-        try:
-            start = round((self.w.shape[0] + 1) / 4)
-            stop = round((self.w.shape[0] + 1) * 7 / 8)
-
-            poly_coeff = numpy.polyfit(
-                numpy.arange(len(self.w[start:stop])),
-                self.w[start:stop],
-                1,
-                rcond=None,
-                full=False,
-                w=None,
-                cov=False
-            )
-
-            print(
-                'Polynom coefficients',
-                poly_coeff,
-                'Detected angular step per image:',
-                poly_coeff[0]
-            )
-
-            # Avoid triggering self.check() while we are already updating
-            old_state = self.speed_W.blockSignals(True)
-            self.speed_W.setValue(poly_coeff[0])
-            self.speed_W.blockSignals(old_state)
-
-        except Exception as exc:
-            print("Could not calculate angular speed:", exc)
-            return False
-        return True
-
-    def reload_angles(self):
-        if not hasattr(self, "path_klick"):
-            return
-
-        print("Angle directory changed.")
-
-        self.buttons_deactivate_all()
-        self.pushReconstruct.setText('Busy')
-        self.pushReconstruct_all.setText('Busy\n')
-        QtWidgets.QApplication.processEvents()
-
-        ok = self.read_angles_from_hdf5()
-
-        if ok:
-            # If normalized data is already in RAM, only reconstruct.
-            # If not, load the current slice first.
-            if hasattr(self, "Norm"):
-                self.reconstruct()
-            else:
-                self.load()
-        else:
-            self.buttons_activate_load()
-            self.buttons_activate_reco()
-            self.buttons_activate_crop_volume()
-            self.buttons_activate_reco_all()
-            self.pushReconstruct.setText('Test')
-            self.pushReconstruct_all.setText('Reconstruct\n Volume')
 
     def cut_path_name(self):
         #analyse and cut the path in pieces and get relevant information from raw-file
@@ -501,12 +337,26 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         print('set middle height as slice number:  ', self.slice_number.value())
         self.slice_number.setEnabled(True)
 
-        if not self.read_angles_from_hdf5():
-            self.buttons_activate_load()
-            self.buttons_activate_reco()
-            self.buttons_activate_crop_volume()
-            self.buttons_activate_reco_all()
-            return None
+        #get rotation angles
+        #self.line_proxy = f['/entry/instrument/NDAttributes/CT_MICOS_W']
+        self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W1']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_MICOS_W2']
+        #self.line_proxy = f['/entry/instrument/NDAttributes/SAMPLE_HUBER_W']
+        print('self.line_proxy', self.line_proxy)
+        if self.FF_before_after_checkbox.isChecked():
+            print('---------------------FF before after--------------------------------')
+            self.graph = numpy.array(self.line_proxy[self.spinBox_number_FFs.value():-self.spinBox_number_FFs.value()])
+        else:
+            self.graph = numpy.array(self.line_proxy[self.spinBox_number_FFs.value():])
+        print('found number of angles:  ', self.graph.shape, '      angles: ', self.graph)
+
+        #find rotation start
+        i = 0
+        while round(self.graph[i]) < 1:  # notice the last projection at below 0.5°
+            self.last_zero_proj = i + 3  # assumes 3 images for speeding up the motor
+            i = i + 1
+        #print(self.graph[1021:1500])
+        print('Last projection at 0 degree/still speeding up: number', self.last_zero_proj)
 
         if self.COR.value() == 0:
             self.COR.setValue(round(self.vol_proxy.shape[2] / 2))
@@ -566,28 +416,16 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.buttons_deactivate_all()
 
         #FF before
-
+        # FFs = self.vol_proxy[0:self.spinBox_number_FFs.value() -1, self.slice_number.value(), :]
         #FF after
-
-
+        FFs = self.vol_proxy[-(self.spinBox_number_FFs.value() - 1):, self.slice_number.value(), :]
+        FFmean = numpy.mean(FFs, axis=0)
+        print('FFs for normalization ', self.spinBox_number_FFs.value(), FFmean.shape)
         if self.FF_before_after_checkbox.isChecked():
-            FFs1 = self.vol_proxy[-(self.spinBox_number_FFs.value() - 1): , self.slice_number.value(), :]
-            FFs2 = self.vol_proxy[0:self.spinBox_number_FFs.value() - 1, self.slice_number.value(), :]
-            FFmean1 = numpy.mean(FFs1, axis=0)
-            FFmean2 = numpy.mean(FFs2, axis=0)
-            FFmean = (FFmean1+FFmean2)/2
-            print('FFs for normalization ', self.spinBox_number_FFs.value(), FFmean.shape)
             print('Flat-fields before and after')
             Sino = self.vol_proxy[self.spinBox_number_FFs.value():-self.spinBox_number_FFs.value(), self.slice_number.value(), :]
-
-
         else:
-            FFs = self.vol_proxy[0:self.spinBox_number_FFs.value() - 1, self.slice_number.value(), :]
-            FFmean = numpy.mean(FFs, axis=0)
-            print('FFs for normalization ', self.spinBox_number_FFs.value(), FFmean.shape)
             Sino = self.vol_proxy[self.spinBox_number_FFs.value() :, self.slice_number.value(), :]
-
-        print('FFs for normalization ', self.spinBox_number_FFs.value(), FFmean.shape)
         self.Norm = numpy.divide(numpy.subtract(Sino, self.spinBox_DF.value()), numpy.subtract(FFmean, self.spinBox_DF.value() + self.spinBox_back_illumination.value()))
         #self.Norm = numpy.divide(Sino, FFmean)
         print('Norm shape', self.Norm.shape)
@@ -687,27 +525,20 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
         # create list with x-positions of projections
         if self.comboBox_180_360.currentText() == '360 - axis right':
-            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] # * (self.number_of_used_projections)
+            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round((self.extend_FOV_fixed_ImageJ_Stream -1) * self.full_size)] * (self.number_of_used_projections)
             #center_list = [self.COR.value() +  self.full_size] * (self.number_of_used_projections)
         else:
-            #center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
-            center_list = self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)
-
-        print('center list is ', center_list)
+            center_list = [self.COR.value() + self.COR_roll.value() * self.slice_number.value() + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (self.number_of_used_projections)
 
         # create one sinogram in the form [z, y, x]
         transposed_sinos = numpy.zeros((min(self.number_of_used_projections, self.Norm.shape[0]), 1, self.full_size), dtype=float)
         transposed_sinos[:,0,:] = self.Norm[self.last_zero_proj : min(self.last_zero_proj + self.number_of_used_projections, self.Norm.shape[0]),:]
-
-        print('transposed sinos is ', transposed_sinos.shape)
 
 
 
         #extend data with calculated parameter, compute logarithm, remove NaN-values
         ### cut and reorder 360°-sinos to 180°-sinos, work in progress !!!
         extended_sinos = tomopy.misc.morph.pad(transposed_sinos, axis=2, npad=round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size), mode='edge')
-
-        print('extended sinos is', extended_sinos.shape)
 
         # for 360° scans crop the padded area opposite of the axis
         print('cropping empty area')
@@ -730,13 +561,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         #apply phase retrieval if desired
         if self.checkBox_phase_2.isChecked() == True:
             print('applying phase contrast')
-            print('TEST')
-            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value() / 1e4,
-                                                              dist=self.doubleSpinBox_distance_2.value(),
-                                                              energy=self.doubleSpinBox_Energy_2.value(),
-                                                              alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
-                                                              ncore=None, nchunk=None)
-            #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+            extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
         print('ring_filter sino_shape', extended_sinos[:,0,:].shape)
 
@@ -1023,14 +848,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
 
             #apply phase retrieval if desired
             if self.checkBox_phase_2.isChecked() == True:
-                print('TEST')
-                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=self.pixel_size.value()/1e4,
-                                                                  dist=self.doubleSpinBox_distance_2.value(),
-                                                                  energy=self.doubleSpinBox_Energy_2.value(),
-                                                                  alpha=self.doubleSpinBox_alpha_2.value(), pad=True,
-                                                                  ncore=None, nchunk=None)
-
-                #extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
+                extended_sinos = tomopy.prep.phase.retrieve_phase(extended_sinos, pixel_size=0.0001, dist=self.doubleSpinBox_distance_2.value(), energy=self.doubleSpinBox_Energy_2.value(), alpha=self.doubleSpinBox_alpha_2.value(), pad=True, ncore=None, nchunk=None)
 
             # create list with COR-positions
             center_list = [self.COR.value() + self.COR_roll.value() * (i + self.spinBox_first.value()) * self.block_size + round(self.extend_FOV_fixed_ImageJ_Stream * self.full_size)] * (
@@ -1039,16 +857,31 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
             print(center_list)
             print('printing')
 
+            start_time = time.time()
 
             #reconstruct
             if self.algorithm_list.currentText() == 'FBP_CUDA':
-                options = {'proj_type': 'cuda', 'method': 'FBP_CUDA'}
-                slices = tomopy.recon(extended_sinos, new_list, center=center_list, algorithm=tomopy.astra,
-                                      options=options)
+                #options = {'proj_type': 'cuda', 'method': 'FBP_CUDA'}
+                #slices = tomopy.recon(extended_sinos, new_list, center=center_list, algorithm=tomopy.astra,
+                #                      options=options)
+
+                slices = self.recon_3D_FBP(extended_sinos, new_list, center_list[0], filter=None)
+
+
+
+
+
+
+
+
             else:
                 slices = tomopy.recon(extended_sinos, new_list, center=center_list,
                                       algorithm=self.algorithm_list.currentText(),
                                       filter_name=self.filter_list.currentText())
+
+            end_time = time.time()
+            print(self.block_size, " block_time in s ", end_time - start_time)
+
 
             # scale with pixel size to attenuation coefficients
             slices = slices * (10000 / self.pixel_size.value())
