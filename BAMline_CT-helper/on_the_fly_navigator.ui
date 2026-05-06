@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>281</width>
+    <width>301</width>
     <height>620</height>
    </rect>
   </property>
@@ -21,7 +21,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>281</width>
+     <width>301</width>
      <height>23</height>
     </rect>
    </property>
@@ -208,7 +208,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
           <string>AUTO UPDATE</string>
          </property>
          <property name="checked">
-          <bool>true</bool>
+          <bool>false</bool>
          </property>
         </widget>
        </item>

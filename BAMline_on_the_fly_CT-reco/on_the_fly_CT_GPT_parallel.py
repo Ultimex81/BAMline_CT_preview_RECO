@@ -69,8 +69,8 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.spinBox_right.valueChanged.connect(self.update_window_size)
 
 
-        self.block_size = 512       #volume will be reconstructed blockwise to reduce needed RAM
-        self.pre_reco = 127         #Pre-Reco for different CORs
+        self.block_size = 32       #volume will be reconstructed blockwise to reduce needed RAM
+        self.pre_reco = 31         #Pre-Reco for different CORs
         self.extend_FOV = 0.15      #the reconstructed area will be enlarged in order to allow off axis scans
         self.crop_offset = 0        #needed for proper volume cropping
         self.batch_CORs = [0,0,0]
@@ -532,6 +532,7 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         self.buttons_deactivate_all()
         self.pushReconstruct.setText('Busy')
         self.pushReconstruct_all.setText('Busy\n')
+        self.algorithm_used = self.algorithm_list.currentText()
 
         QtWidgets.QApplication.processEvents()
         #print('def reconstruct')
@@ -602,7 +603,16 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         extended_sinos_vol = numpy.stack([extended_sinos[:,0,:]] * shifts.shape[0], axis=1)
         
         print('reconstructing COR-batch')
-        self.recon_stack = tomopy.recon(extended_sinos_vol, new_list, center=self.batch_CORs, algorithm=self.algorithm_list.currentText(), filter_name=self.filter_list.currentText())
+        if self.algorithm_list.currentText() == 'FBP_CUDA':
+            self.options = {'proj_type': 'cuda', 'method': 'FBP_CUDA'}
+            self.recon_stack = tomopy.recon(extended_sinos_vol, new_list, center=self.batch_CORs, algorithm=self.algorithm_list.currentText(), filter_name=self.filter_list.currentText(), options=self.options)
+        else:
+            self.recon_stack = tomopy.recon(extended_sinos_vol, new_list, center=self.batch_CORs,
+                algorithm=self.algorithm_list.currentText(),
+                filter_name=self.filter_list.currentText())
+        #self.recon_stack = tomopy.recon(extended_sinos_vol, new_list, center=self.batch_CORs,
+        #                                algorithm=self.algorithm_list.currentText(),
+        #                                filter_name=self.filter_list.currentText())
 
         print('reconstruction of COR-batch is done')
 

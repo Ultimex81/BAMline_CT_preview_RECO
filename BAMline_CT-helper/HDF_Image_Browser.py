@@ -119,9 +119,13 @@ class HDF_Browser(Ui_HDF_Browser_Window, Q_HDF_Browser_Window):
         self.horizontalScrollBar_slice.setEnabled(True)
         self.Load.setText('Load')
 
+
+
     def update(self):
 
         if self.radioButton_X.isChecked():
+            self.FF_number_spinBox.hide()
+            self.label_FF.hide()
             self.horizontalScrollBar_slice.setMaximum(self.dataset.shape[1] - 1)
             self.horizontalScrollBar_slice.setMinimum(0)
             self.spinBox_slice.setMaximum(self.dataset.shape[1])
@@ -131,6 +135,8 @@ class HDF_Browser(Ui_HDF_Browser_Window, Q_HDF_Browser_Window):
                 {'size': self.dataset.shape[0], 'fullSize': self.dataset.shape[0], 'binning': 1}]
             self.image['value'] = ({'ushortValue': [0, 0, 0, 0]},)
         elif self.radioButton_Y.isChecked():
+            self.FF_number_spinBox.hide()
+            self.label_FF.hide()
             self.horizontalScrollBar_slice.setMaximum(self.dataset.shape[2] - 1)
             self.horizontalScrollBar_slice.setMinimum(0)
             self.spinBox_slice.setMaximum(self.dataset.shape[2])
@@ -140,6 +146,8 @@ class HDF_Browser(Ui_HDF_Browser_Window, Q_HDF_Browser_Window):
                 {'size': self.dataset.shape[0], 'fullSize': self.dataset.shape[0], 'binning': 1}]
             self.image['value'] = ({'ushortValue': [0, 0, 0, 0]},)
         elif self.radioButton_Z.isChecked():
+            self.FF_number_spinBox.show()
+            self.label_FF.show()
             self.horizontalScrollBar_slice.setMaximum(self.dataset.shape[0] - 1)
             self.horizontalScrollBar_slice.setMinimum(0)
             self.spinBox_slice.setMaximum(self.dataset.shape[0])

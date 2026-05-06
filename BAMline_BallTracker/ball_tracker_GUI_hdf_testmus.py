@@ -23,7 +23,7 @@ def main():
 	path_klick = tkinter.filedialog.askopenfilename(title="Select one file of the scan", initialdir = "/raid-ssd/CT/")
 	#path_klick = QtWidgets.QFileDialog.getOpenFileName(None, 'Select one file of the scan, please.',"/mnt/raid/CT/2021/2021_12/Markoetter/W500um/211207_1441_36_W500um___Z225_Y8400_20000eV_3p61um_100ms/")
 
-	name = "Kugeljustage_32"
+	name = "Kugeljustage_"
 
 	import sys
 	app = QtWidgets.QApplication(sys.argv)
@@ -34,29 +34,6 @@ def main():
 
 	print('Reading parameters...')
 	print(main_Ball_Tracker_Question.tabWidget)
-
-	# checking start of rotation
-	with h5py.File(path_klick, 'r') as hdf:
-		entry = hdf.get('entry')
-		# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_W')
-		# w_data = entry.get('/entry/instrument/NDAttributes/AEROTECH_W')
-		# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W1')
-		# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W2')
-		# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_HUBER_W')
-		angles_destination = '/entry/instrument/NDAttributes/' + str(main_Ball_Tracker_Question.angle_directory_combobox.currentText())
-		w_data = entry.get(angles_destination)
-
-		w_array = numpy.array(w_data)
-		print(w_array)
-		i = main_Ball_Tracker_Question.HDF_FF1
-		while i < len(w_array):
-			print(i)
-			if round(w_array[i]) != 0:  # notice the last projection at zero degree
-				last_zero_proj = i + 1 - main_Ball_Tracker_Question.HDF_FF1  # start analysis 3 images after start of rotation
-				break
-			i = i + 1
-
-	print('last zero projection: ', last_zero_proj)
 
 	if main_Ball_Tracker_Question.tabWidget==0:
 		startNumberProj = main_Ball_Tracker_Question.startNumberProj
@@ -126,6 +103,29 @@ def main():
 			img = Image.fromarray(image_save)
 			img.save(filename_FFs)
 			i = i + 1
+
+			# checking start of rotation
+		with h5py.File(path_klick, 'r') as hdf:
+			entry = hdf.get('entry')
+			# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_W')
+			# w_data = entry.get('/entry/instrument/NDAttributes/AEROTECH_W')
+			#w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W1')
+			# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_MICOS_W2')
+			# w_data = entry.get('/entry/instrument/NDAttributes/SAMPLE_HUBER_W')
+			angles_destination = '/entry/instrument/NDAttributes/' + str(main_Ball_Tracker_Question.angle_directory_combobox.currentText())
+			w_data = entry.get(angles_destination)
+
+			w_array = numpy.array(w_data)
+			print(w_array)
+			i = main_Ball_Tracker_Question.HDF_FF1
+			while i < len(w_array):
+				print(i)
+				if round(w_array[i]) != 0:  # notice the last projection at zero degree
+					last_zero_proj = i + 1 - main_Ball_Tracker_Question.HDF_FF1  # start analysis 3 images after start of rotation
+					break
+				i = i + 1
+
+		print('last zero projection: ', last_zero_proj)
 
 		# setting paths for ball tracking
 		inputFiles = ImageStack(filePattern= path_in + namepart + '_temp_proj/Proj' + "%4d.tif", startNumber = last_zero_proj, slices = numberProj)
