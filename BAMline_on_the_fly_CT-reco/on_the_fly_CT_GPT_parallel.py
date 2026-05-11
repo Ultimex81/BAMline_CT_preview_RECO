@@ -85,27 +85,27 @@ class On_the_fly_CT_tester(Ui_on_the_fly_Window, Q_on_the_fly_Window):
         # This way the ADViewer (NDViewer) plugin can be also used for visualizing reconstructions.
         #pva_image_data = self.pva_structure.get('')
         #pva_image_dict = pva_image_data.getStructureDict()
-        pva_image_dict = {'value': ({'booleanValue': [pva.pvaccess.ScalarType.BOOLEAN], 'byteValue':
-            [pva.pvaccess.ScalarType.BYTE], 'shortValue': [pva.pvaccess.ScalarType.SHORT], 'intValue':
-            [pva.pvaccess.ScalarType.INT], 'longValue': [pva.pvaccess.ScalarType.LONG], 'ubyteValue':
-            [pva.pvaccess.ScalarType.UBYTE], 'ushortValue': [pva.pvaccess.ScalarType.USHORT], 'uintValue':
-            [pva.pvaccess.ScalarType.UINT], 'ulongValue': [pva.pvaccess.ScalarType.ULONG], 'floatValue':
-            [pva.pvaccess.ScalarType.FLOAT], 'doubleValue': [pva.pvaccess.ScalarType.DOUBLE]},), 'codec':
-            {'name': pva.pvaccess.ScalarType.STRING, 'parameters': ()}, 'compressedSize':
-            pva.pvaccess.ScalarType.LONG, 'uncompressedSize': pva.pvaccess.ScalarType.LONG, 'dimension':
-            [{'size': pva.pvaccess.ScalarType.INT, 'offset': pva.pvaccess.ScalarType.INT, 'fullSize':
-                pva.pvaccess.ScalarType.INT, 'binning': pva.pvaccess.ScalarType.INT, 'reverse':
-                pva.pvaccess.ScalarType.BOOLEAN}], 'uniqueId': pva.pvaccess.ScalarType.INT, 'dataTimeStamp':
-            {'secondsPastEpoch': pva.pvaccess.ScalarType.LONG, 'nanoseconds': pva.pvaccess.ScalarType.INT,
-             'userTag': pva.pvaccess.ScalarType.INT}, 'attribute':
-            [{'name': pva.pvaccess.ScalarType.STRING, 'value': (), 'descriptor': pva.pvaccess.ScalarType.STRING,
-              'sourceType': pva.pvaccess.ScalarType.INT, 'source': pva.pvaccess.ScalarType.STRING}], 'descriptor':
-            pva.pvaccess.ScalarType.STRING, 'alarm': {'severity': pva.pvaccess.ScalarType.INT, 'status':
-            pva.pvaccess.ScalarType.INT, 'message': pva.pvaccess.ScalarType.STRING}, 'timeStamp':
-            {'secondsPastEpoch': pva.pvaccess.ScalarType.LONG, 'nanoseconds': pva.pvaccess.ScalarType.INT, 'userTag':
-                pva.pvaccess.ScalarType.INT}, 'display': {'limitLow': pva.pvaccess.ScalarType.DOUBLE, 'limitHigh':
-            pva.pvaccess.ScalarType.DOUBLE, 'description': pva.pvaccess.ScalarType.STRING, 'format':
-            pva.pvaccess.ScalarType.STRING, 'units': pva.pvaccess.ScalarType.STRING}}
+        pva_image_dict = {'value': ({'booleanValue': [pva.ScalarType.BOOLEAN], 'byteValue':
+            [pva.ScalarType.BYTE], 'shortValue': [pva.ScalarType.SHORT], 'intValue':
+            [pva.ScalarType.INT], 'longValue': [pva.ScalarType.LONG], 'ubyteValue':
+            [pva.ScalarType.UBYTE], 'ushortValue': [pva.ScalarType.USHORT], 'uintValue':
+            [pva.ScalarType.UINT], 'ulongValue': [pva.ScalarType.ULONG], 'floatValue':
+            [pva.ScalarType.FLOAT], 'doubleValue': [pva.ScalarType.DOUBLE]},), 'codec':
+            {'name': pva.ScalarType.STRING, 'parameters': ()}, 'compressedSize':
+            pva.ScalarType.LONG, 'uncompressedSize': pva.ScalarType.LONG, 'dimension':
+            [{'size': pva.ScalarType.INT, 'offset': pva.ScalarType.INT, 'fullSize':
+                pva.ScalarType.INT, 'binning': pva.ScalarType.INT, 'reverse':
+                pva.ScalarType.BOOLEAN}], 'uniqueId': pva.ScalarType.INT, 'dataTimeStamp':
+            {'secondsPastEpoch': pva.ScalarType.LONG, 'nanoseconds': pva.ScalarType.INT,
+             'userTag': pva.ScalarType.INT}, 'attribute':
+            [{'name': pva.ScalarType.STRING, 'value': (), 'descriptor': pva.ScalarType.STRING,
+              'sourceType': pva.ScalarType.INT, 'source': pva.ScalarType.STRING}], 'descriptor':
+            pva.ScalarType.STRING, 'alarm': {'severity': pva.ScalarType.INT, 'status':
+            pva.ScalarType.INT, 'message': pva.ScalarType.STRING}, 'timeStamp':
+            {'secondsPastEpoch': pva.ScalarType.LONG, 'nanoseconds': pva.ScalarType.INT, 'userTag':
+                pva.ScalarType.INT}, 'display': {'limitLow': pva.ScalarType.DOUBLE, 'limitHigh':
+            pva.ScalarType.DOUBLE, 'description': pva.ScalarType.STRING, 'format':
+            pva.ScalarType.STRING, 'units': pva.ScalarType.STRING}}
 
         self.pv_rec = pva.PvObject(pva_image_dict)
         self.pvaServer = pva.PvaServer(channel_name, self.pv_rec)
